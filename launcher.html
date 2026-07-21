@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>SCR-OCR</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    background: #17181c;
+    color: #e8e8e8;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    user-select: none;
+  }
+  h1 { font-size: 18px; font-weight: 600; }
+  button {
+    font: 15px 'Segoe UI', sans-serif;
+    background: #2f6fed;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 26px;
+    cursor: pointer;
+  }
+  button:hover { background: #3b7bff; }
+  .hint { font-size: 12.5px; color: #9aa0aa; text-align: center; line-height: 1.6; }
+  kbd {
+    background: #26282e;
+    border: 1px solid #3a3d45;
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-family: inherit;
+    font-size: 11.5px;
+  }
+</style>
+</head>
+<body>
+<h1>SCR-OCR</h1>
+<button id="capture">Take screenshot</button>
+<div class="hint">
+  Global hotkey: <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>S</kbd><br />
+  Closing this window keeps SCR-OCR running in the tray.
+</div>
+<script>
+  const { ipcRenderer } = require('electron');
+  document.getElementById('capture').addEventListener('click', () => {
+    ipcRenderer.send('launcher-capture');
+  });
+</script>
+</body>
+</html>

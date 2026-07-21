@@ -1,0 +1,22 @@
+{
+  "name": "scr-ocr",
+  "productName": "SCR-OCR",
+  "version": "0.1.0",
+  "description": "Area screenshot tool with live-text OCR overlay — select a region, copy/save/pin it, and OCR the text so you can select and copy it right off the image.",
+  "main": "main.js",
+  "license": "MIT",
+  "author": "Kuba",
+  "scripts": {
+    "start": "electron .",
+    "selftest": "electron . --selftest"
+  },
+  "trustedDependencies": [
+    "electron"
+  ],
+  "devDependencies": {
+    "electron": "^33.0.0"
+  },
+  "dependencies": {
+    "tesseract.js": "^5.1.1"
+  }
+}

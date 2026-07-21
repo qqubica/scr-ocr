@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>SCR-OCR — screenshot</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    background: #17181c;
+    color: #e8e8e8;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  #toolbar {
+    height: 52px;
+    flex: 0 0 52px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    background: #1d1f24;
+    border-bottom: 1px solid #2a2d33;
+    -webkit-app-region: drag;
+    user-select: none;
+  }
+  #toolbar button {
+    -webkit-app-region: no-drag;
+    font: 13px 'Segoe UI', sans-serif;
+    background: #26282e;
+    color: #e8e8e8;
+    border: 1px solid #3a3d45;
+    border-radius: 6px;
+    padding: 7px 12px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  #toolbar button:hover { background: #2f323a; }
+  #toolbar button:disabled { opacity: 0.45; cursor: default; }
+  #toolbar button.primary { background: #2f6fed; border-color: #2f6fed; color: #fff; }
+  #toolbar button.primary:hover { background: #3b7bff; }
+  #toolbar button.active { background: #1f4fb0; border-color: #2f6fed; color: #fff; }
+  #status {
+    font-size: 12px;
+    color: #9aa0aa;
+    margin-left: auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #closeBtn { margin-left: 6px; }
+  #stage {
+    flex: 1;
+    overflow: auto;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 12px;
+  }
+  #frame { position: relative; line-height: 0; }
+  #img { display: block; }
+  /* OCR text layer: real, selectable text stretched over each word's box.
+     The glyphs are transparent — only the selection highlight is visible. */
+  #textLayer {
+    position: absolute;
+    inset: 0;
+    line-height: 1;
+    display: none;
+    cursor: text;
+  }
+  #textLayer.visible { display: block; }
+  #textLayer span.w {
+    position: absolute;
+    color: transparent;
+    white-space: pre;
+    transform-origin: 0 0;
+    font-family: 'Segoe UI', sans-serif;
+  }
+  #textLayer span.w::selection { background: rgba(77, 163, 255, 0.45); }
+  #frame.ocr-outline #img { outline: 1px solid rgba(77, 163, 255, 0.35); outline-offset: -1px; }
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <button id="copyImg" title="Copy image to clipboard (Ctrl+C)">Copy</button>
+  <button id="save" title="Save as PNG (Ctrl+S)">Save</button>
+  <button id="ocr" class="primary" title="Recognize text and overlay it on the image">OCR</button>
+  <button id="copyText" title="Copy all recognized text" disabled>Copy text</button>
+  <button id="pin" class="active" title="Keep this window on top">📌 Pinned</button>
+  <span id="status"></span>
+  <button id="closeBtn" title="Close (Esc)">✕</button>
+</div>
+<div id="stage">
+  <div id="frame">
+    <img id="img" draggable="false" />
+    <div id="textLayer"></div>
+  </div>
+</div>
+<script>
+  const { ipcRenderer } = require('electron');
+
+  const SELFTEST = new URLSearchParams(location.search).get('selftest') === '1';
+
+  const img = document.getElementById('img');
+  const frame = document.getElementById('frame');
+  const textLayer = document.getElementById('textLayer');
+  const statusEl = document.getElementById('status');
+  const btnCopy = document.getElementById('copyImg');
+  const btnSave = document.getElementById('save');
+  const btnOcr = document.getElementById('ocr');
+  const btnCopyText = document.getElementById('copyText');
+  const btnPin = document.getElementById('pin');
+  const btnClose = document.getElementById('closeBtn');
+
+  let pngBase64 = null;
+  let physW = 0, physH = 0;
+  let ocrText = '';
+  let ocrDone = false;
+  let ocrRunning = false;
+  let pinned = true;
+
+  function setStatus(msg) { statusEl.textContent = msg || ''; }
+  function flashStatus(msg) {
+    setStatus(msg);
+    setTimeout(() => { if (statusEl.textContent === msg) setStatus(''); }, 1800);
+  }
+
+  ipcRenderer.on('result-init', (e, data) => {
+    pngBase64 = data.pngBase64;
+    physW = data.physW;
+    physH = data.physH;
+    img.src = 'data:image/png;base64,' + pngBase64;
+    img.style.width = data.cssW + 'px';
+    img.style.height = data.cssH + 'px';
+    if (SELFTEST) img.decode().then(runOcr).catch(runOcr);
+  });
+
+  // ------------------------------------------------------------- actions
+
+  btnCopy.addEventListener('click', () => {
+    ipcRenderer.send('result-copy-image', pngBase64);
+    flashStatus('Image copied');
+  });
+
+  btnSave.addEventListener('click', async () => {
+    const ok = await ipcRenderer.invoke('result-save', pngBase64);
+    if (ok) flashStatus('Saved');
+  });
+
+  btnCopyText.addEventListener('click', () => {
+    if (!ocrText) return;
+    ipcRenderer.send('result-copy-text', ocrText);
+    flashStatus('Text copied');
+  });
+
+  btnPin.addEventListener('click', () => {
+    pinned = !pinned;
+    ipcRenderer.send('result-pin', pinned);
+    btnPin.classList.toggle('active', pinned);
+    btnPin.textContent = pinned ? '📌 Pinned' : '📌 Pin';
+  });
+
+  btnClose.addEventListener('click', () => ipcRenderer.send('result-close'));
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') ipcRenderer.send('result-close');
+    if (e.ctrlKey && e.key.toLowerCase() === 's') { e.preventDefault(); btnSave.click(); }
+    if (e.ctrlKey && e.key.toLowerCase() === 'c') {
+      // if the user selected OCR text, let the browser copy it; otherwise copy the image
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed) { e.preventDefault(); btnCopy.click(); }
+    }
+    if (e.ctrlKey && e.key.toLowerCase() === 'a' && ocrDone) {
+      e.preventDefault();
+      const range = document.createRange();
+      range.selectNodeContents(textLayer);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  });
+
+  // ------------------------------------------------------------- OCR
+
+  btnOcr.addEventListener('click', () => {
+    if (ocrRunning) return;
+    if (ocrDone) {
+      // toggle the text layer
+      const on = textLayer.classList.toggle('visible');
+      frame.classList.toggle('ocr-outline', on);
+      btnOcr.classList.toggle('active', on);
+      return;
+    }
+    runOcr();
+  });
+
+  async function runOcr() {
+    if (ocrRunning || ocrDone || !pngBase64) return;
+    ocrRunning = true;
+    btnOcr.disabled = true;
+    setStatus('Recognizing text…');
+    try {
+      const { text, words } = await ipcRenderer.invoke('run-ocr', pngBase64);
+      renderTextLayer(words);
+      ocrText = text;
+      ocrDone = true;
+      ocrRunning = false;
+      btnOcr.disabled = false;
+      btnOcr.classList.add('active');
+      btnOcr.textContent = 'OCR ✓';
+      btnOcr.title = 'Toggle the recognized-text layer';
+      btnCopyText.disabled = !ocrText;
+      textLayer.classList.add('visible');
+      frame.classList.add('ocr-outline');
+      setStatus(words.length ? words.length + ' words — select text on the image' : 'No text found');
+      if (SELFTEST) {
+        ipcRenderer.send('selftest-ocr-done', { text: ocrText, words: words.length });
+      }
+    } catch (err) {
+      ocrRunning = false;
+      btnOcr.disabled = false;
+      setStatus('OCR failed: ' + (err && err.message ? err.message : err));
+      if (SELFTEST) ipcRenderer.send('selftest-ocr-error', String(err && err.stack ? err.stack : err));
+    }
+  }
+
+  ipcRenderer.on('ocr-progress', (e, m) => {
+    if (!ocrRunning) return;
+    if (m.status === 'recognizing text') {
+      setStatus('Recognizing text… ' + Math.round(m.progress * 100) + '%');
+    } else if (m.status && m.progress < 1) {
+      setStatus(m.status + '…');
+    }
+  });
+
+  function renderTextLayer(words) {
+    textLayer.innerHTML = '';
+    // physical-pixel bbox -> displayed CSS px
+    const scaleX = img.clientWidth / physW;
+    const scaleY = img.clientHeight / physH;
+    const measure = document.createElement('canvas').getContext('2d');
+    for (const w of words) {
+      const { x0, y0, x1, y1 } = w.bbox;
+      const bw = (x1 - x0) * scaleX;
+      const bh = (y1 - y0) * scaleY;
+      if (bw <= 0 || bh <= 0) continue;
+      const span = document.createElement('span');
+      span.className = 'w';
+      span.textContent = w.text;
+      const fontSize = Math.max(4, bh);
+      span.style.left = x0 * scaleX + 'px';
+      span.style.top = y0 * scaleY + 'px';
+      span.style.fontSize = fontSize + 'px';
+      // stretch the glyphs horizontally to match the word's real box, so the
+      // selection highlight hugs the printed word
+      measure.font = fontSize + "px 'Segoe UI', sans-serif";
+      const natural = measure.measureText(w.text).width;
+      if (natural > 0) span.style.transform = 'scaleX(' + bw / natural + ')';
+      textLayer.appendChild(span);
+      textLayer.appendChild(document.createTextNode(' '));
+    }
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+node_modules/
+tessdata/
+*.traineddata
+*.traineddata.gz
+dist/
+Thumbs.db
