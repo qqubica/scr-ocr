@@ -1,20 +1,24 @@
 {
   "name": "scr-ocr",
   "productName": "SCR-OCR",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Area screenshot tool with live-text OCR overlay — select a region, copy/save/pin it, and OCR the text so you can select and copy it right off the image.",
   "main": "main.js",
   "license": "MIT",
   "author": "Kuba",
   "scripts": {
     "start": "electron .",
-    "selftest": "electron . --selftest"
+    "dev": "electronmon .",
+    "selftest": "electron . --selftest",
+    "dist": "electron-packager . SCR-OCR --platform=win32 --arch=x64 --out=dist --overwrite --icon=assets/icon.ico --ignore=\"^/dist$\" --ignore=\"^/\\.claude$\" --ignore=\"^/\\.gitignore$\" --ignore=\"^/CLAUDE\\.md$\""
   },
   "trustedDependencies": [
     "electron"
   ],
   "devDependencies": {
-    "electron": "^33.0.0"
+    "@electron/packager": "^20.0.4",
+    "electron": "^33.0.0",
+    "electronmon": "^2.0.4"
   },
   "dependencies": {
     "tesseract.js": "^5.1.1"

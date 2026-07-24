@@ -3,12 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <title>SCR-OCR — screenshot</title>
+<link rel="stylesheet" href="theme-soft-round.css" />
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    font-family: 'Segoe UI', sans-serif;
-    background: #17181c;
-    color: #e8e8e8;
     height: 100vh;
     display: flex;
     flex-direction: column;
@@ -21,36 +19,63 @@
     align-items: center;
     gap: 8px;
     padding: 0 12px;
-    background: #1d1f24;
-    border-bottom: 1px solid #2a2d33;
+    background: var(--sp-surface);
+    border-bottom: 1px solid var(--sp-border);
     -webkit-app-region: drag;
     user-select: none;
   }
-  #toolbar button {
-    -webkit-app-region: no-drag;
-    font: 13px 'Segoe UI', sans-serif;
-    background: #26282e;
-    color: #e8e8e8;
-    border: 1px solid #3a3d45;
-    border-radius: 6px;
-    padding: 7px 12px;
-    cursor: pointer;
-    white-space: nowrap;
+  #toolbar button { -webkit-app-region: no-drag; }
+  /* density: the 52px toolbar wants slightly shorter pills than stock .sp-btn */
+  /* flex:none — when width runs out, #status is the only element allowed to
+     shrink; buttons must never squeeze or clip */
+  #toolbar .sp-btn { flex: none; height: 32px; padding: 0 14px; font-size: 12.5px; white-space: nowrap; }
+  #toolbar button:disabled { opacity: var(--sp-disabled-opacity); cursor: default; }
+  #toolbar .sp-btn--outline.active {
+    background: var(--sp-accent-tint);
+    border-color: var(--sp-accent);
+    color: var(--sp-accent);
   }
-  #toolbar button:hover { background: #2f323a; }
-  #toolbar button:disabled { opacity: 0.45; cursor: default; }
-  #toolbar button.primary { background: #2f6fed; border-color: #2f6fed; color: #fff; }
-  #toolbar button.primary:hover { background: #3b7bff; }
-  #toolbar button.active { background: #1f4fb0; border-color: #2f6fed; color: #fff; }
+  #toolbar .sp-btn:not(.sp-btn--outline).active { box-shadow: 0 0 0 3px var(--sp-accent-tint); }
   #status {
-    font-size: 12px;
-    color: #9aa0aa;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-family: var(--sp-font-mono);
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--sp-muted);
+    text-align: right;
     margin-left: auto;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  #closeBtn { margin-left: 6px; }
+  #closeBtn {
+    margin-left: 6px;
+    width: 32px;
+    height: 32px;
+    flex: none;
+    border: none;
+    border-radius: var(--sp-radius-full);
+    background: none;
+    color: var(--sp-muted);
+    font: 14px/1 var(--sp-font-ui);
+    cursor: pointer;
+    transition: background var(--sp-dur-hover) ease;
+  }
+  #closeBtn:hover { background: var(--sp-hover-strong); color: var(--sp-text); }
+  /* OCR-in-progress spinner, inline in the OCR button (.sp-btn gap spaces it) */
+  .spinner {
+    display: none;
+    width: 12px;
+    height: 12px;
+    flex: none;
+    border: 2px solid color-mix(in srgb, currentColor 30%, transparent);
+    border-top-color: currentColor;
+    border-radius: var(--sp-radius-full);
+    animation: spinner-turn 0.7s linear infinite;
+  }
+  .spinner.on { display: inline-block; }
+  @keyframes spinner-turn { to { transform: rotate(360deg); } }
   #stage {
     flex: 1;
     overflow: auto;
@@ -59,10 +84,25 @@
     justify-content: center;
     padding: 12px;
   }
-  #frame { position: relative; line-height: 0; }
-  #img { display: block; }
+  /* the screenshot is media — it stays square-cornered and pixel-true; the
+     Soft Round chrome shows up as the raised-card shadow around it
+     (outline + shadow only, so the text layer's coordinates stay exact) */
+  #frame {
+    position: relative;
+    line-height: 0;
+    outline: 1px solid var(--sp-border);
+    box-shadow: var(--sp-shadow-card);
+  }
+  /* only the OCR text layer is selectable — a drag or Ctrl+A must never pull
+     the <img> into the range (the browser would paint the whole screenshot
+     with the selection overlay) */
+  #stage { user-select: none; }
+  #img { display: block; -webkit-user-drag: none; }
+  #textLayer { user-select: text; }
   /* OCR text layer: real, selectable text stretched over each word's box.
-     The glyphs are transparent — only the selection highlight is visible. */
+     The glyphs are transparent — glass chips (#hlLayer) mark recognized words
+     and the selection highlight is visible. Both use the word's LINE height,
+     so highlights stay uniform regardless of ascenders/descenders/caps. */
   #textLayer {
     position: absolute;
     inset: 0;
@@ -71,6 +111,24 @@
     cursor: text;
   }
   #textLayer.visible { display: block; }
+  /* glass chips live in their own untransformed layer — borders and radii on
+     the scaleX-stretched spans would be distorted by the stretch */
+  #hlLayer { position: absolute; inset: 0; pointer-events: none; }
+  /* quiet glass: a whisper of fill, light inner edge + faint dark outer edge
+     (classic glass rim — reads on both light and dark screenshots without
+     shouting on either) */
+  #hlLayer .hl {
+    position: absolute;
+    background: color-mix(in srgb, var(--sp-accent) 4%, rgba(255, 255, 255, 0.06));
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+      inset 0 1px 0 rgba(255, 255, 255, 0.10),
+      0 0 0 1px rgba(0, 0, 0, 0.05),
+      0 1px 5px rgba(0, 0, 0, 0.04);
+    /* no blur — it would smear the very glyphs being highlighted */
+    backdrop-filter: saturate(1.12) brightness(1.02);
+    -webkit-backdrop-filter: saturate(1.12) brightness(1.02);
+  }
   #textLayer span.w {
     position: absolute;
     color: transparent;
@@ -78,17 +136,21 @@
     transform-origin: 0 0;
     font-family: 'Segoe UI', sans-serif;
   }
-  #textLayer span.w::selection { background: rgba(77, 163, 255, 0.45); }
-  #frame.ocr-outline #img { outline: 1px solid rgba(77, 163, 255, 0.35); outline-offset: -1px; }
+  #textLayer span.w::selection { background: color-mix(in srgb, var(--sp-accent) 45%, transparent); }
+  #frame.ocr-outline #img {
+    outline: 1px solid color-mix(in srgb, var(--sp-accent) 45%, transparent);
+    outline-offset: -1px;
+  }
 </style>
 </head>
-<body>
+<body class="sp-body">
 <div id="toolbar">
-  <button id="copyImg" title="Copy image to clipboard (Ctrl+C)">Copy</button>
-  <button id="save" title="Save as PNG (Ctrl+S)">Save</button>
-  <button id="ocr" class="primary" title="Recognize text and overlay it on the image">OCR</button>
-  <button id="copyText" title="Copy all recognized text" disabled>Copy text</button>
-  <button id="pin" class="active" title="Keep this window on top">📌 Pinned</button>
+  <button id="newShot" class="sp-btn sp-btn--outline" title="Take a new screenshot">📷 New</button>
+  <button id="copyImg" class="sp-btn sp-btn--outline" title="Copy image to clipboard (Ctrl+C)">Copy</button>
+  <button id="save" class="sp-btn sp-btn--outline" title="Save as PNG (Ctrl+S)">Save</button>
+  <button id="ocr" class="sp-btn" title="Recognizing text…" disabled><span id="ocrSpin" class="spinner"></span>OCR</button>
+  <button id="copyText" class="sp-btn sp-btn--outline" title="Copy all recognized text" disabled>Copy text</button>
+  <button id="pin" class="sp-btn sp-btn--outline active" title="Keep this window on top">📌 Pinned</button>
   <span id="status"></span>
   <button id="closeBtn" title="Close (Esc)">✕</button>
 </div>
@@ -120,8 +182,14 @@
   let ocrDone = false;
   let ocrRunning = false;
   let pinned = true;
+  // OCR words in reading order (block→paragraph→line→word), each paired with
+  // its rendered span — the source of truth for reconstructing copied text
+  let renderedWords = [];
 
-  function setStatus(msg) { statusEl.textContent = msg || ''; }
+  function setStatus(msg) {
+    statusEl.textContent = msg || '';
+    statusEl.title = msg || ''; // full text on hover when the narrow window ellipsizes it
+  }
   function flashStatus(msg) {
     setStatus(msg);
     setTimeout(() => { if (statusEl.textContent === msg) setStatus(''); }, 1800);
@@ -134,7 +202,8 @@
     img.src = 'data:image/png;base64,' + pngBase64;
     img.style.width = data.cssW + 'px';
     img.style.height = data.cssH + 'px';
-    if (SELFTEST) img.decode().then(runOcr).catch(runOcr);
+    // OCR runs right away so the button can reflect whether text was found
+    img.decode().then(runOcr).catch(runOcr);
   });
 
   // ------------------------------------------------------------- actions
@@ -163,6 +232,8 @@
   });
 
   btnClose.addEventListener('click', () => ipcRenderer.send('result-close'));
+
+  document.getElementById('newShot').addEventListener('click', () => ipcRenderer.send('start-capture'));
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') ipcRenderer.send('result-close');
@@ -193,34 +264,48 @@
       btnOcr.classList.toggle('active', on);
       return;
     }
-    runOcr();
+    runOcr(); // reachable only after a failed run (button re-enabled for retry)
   });
 
   async function runOcr() {
     if (ocrRunning || ocrDone || !pngBase64) return;
     ocrRunning = true;
     btnOcr.disabled = true;
+    document.getElementById('ocrSpin').classList.add('on');
     setStatus('Recognizing text…');
     try {
       const { text, words } = await ipcRenderer.invoke('run-ocr', pngBase64);
+      document.getElementById('ocrSpin').classList.remove('on');
       renderTextLayer(words);
       ocrText = text;
       ocrDone = true;
       ocrRunning = false;
-      btnOcr.disabled = false;
-      btnOcr.classList.add('active');
-      btnOcr.textContent = 'OCR ✓';
-      btnOcr.title = 'Toggle the recognized-text layer';
+      const found = words.length > 0;
+      btnOcr.disabled = !found;
+      if (found) {
+        btnOcr.classList.add('active');
+        btnOcr.textContent = 'OCR ✓';
+        btnOcr.title = 'Toggle the recognized-text layer';
+        textLayer.classList.add('visible');
+        frame.classList.add('ocr-outline');
+        setStatus(words.length + ' words — select text on the image');
+      } else {
+        btnOcr.title = 'No text found on this screenshot';
+        setStatus('No text found');
+      }
       btnCopyText.disabled = !ocrText;
-      textLayer.classList.add('visible');
-      frame.classList.add('ocr-outline');
-      setStatus(words.length ? words.length + ' words — select text on the image' : 'No text found');
       if (SELFTEST) {
-        ipcRenderer.send('selftest-ocr-done', { text: ocrText, words: words.length });
+        // signal after a real painted frame — SELFTEST_SHOT captures the window,
+        // and a send right after the DOM update races the compositor
+        requestAnimationFrame(() => requestAnimationFrame(() =>
+          ipcRenderer.send('selftest-ocr-done', { text: ocrText, words: words.length })
+        ));
       }
     } catch (err) {
       ocrRunning = false;
       btnOcr.disabled = false;
+      document.getElementById('ocrSpin').classList.remove('on');
+      btnOcr.title = 'Retry text recognition';
       setStatus('OCR failed: ' + (err && err.message ? err.message : err));
       if (SELFTEST) ipcRenderer.send('selftest-ocr-error', String(err && err.stack ? err.stack : err));
     }
@@ -237,21 +322,60 @@
 
   function renderTextLayer(words) {
     textLayer.innerHTML = '';
+    renderedWords = [];
+    const hlLayer = document.createElement('div');
+    hlLayer.id = 'hlLayer';
+    textLayer.appendChild(hlLayer);
     // physical-pixel bbox -> displayed CSS px
     const scaleX = img.clientWidth / physW;
     const scaleY = img.clientHeight / physH;
     const measure = document.createElement('canvas').getContext('2d');
+    // chips are merged runs of neighboring words in a line — with margin around
+    // the text, per-word chips would overlap; one calm glass bar per run instead
+    let run = null;
+    const flushRun = () => {
+      if (!run) return;
+      const bh = (run.ly1 - run.ly0) * scaleY;
+      const pad = Math.min(8, Math.max(2, bh * 0.3));
+      const left = Math.max(0, run.x0 * scaleX - pad);
+      const top = Math.max(0, run.ly0 * scaleY - pad);
+      const right = Math.min(img.clientWidth, run.x1 * scaleX + pad);
+      const bottom = Math.min(img.clientHeight, run.ly0 * scaleY + bh + pad);
+      const hl = document.createElement('i');
+      hl.className = 'hl';
+      hl.style.left = left + 'px';
+      hl.style.top = top + 'px';
+      hl.style.width = right - left + 'px';
+      hl.style.height = bottom - top + 'px';
+      hl.style.borderRadius = Math.min(12, (bottom - top) * 0.32) + 'px';
+      hlLayer.appendChild(hl);
+      run = null;
+    };
     for (const w of words) {
       const { x0, y0, x1, y1 } = w.bbox;
+      // vertical extent comes from the OCR line, so every word in a line gets
+      // the same box height no matter its glyphs
+      const ly0 = w.lineY0 != null ? w.lineY0 : y0;
+      const ly1 = w.lineY1 != null ? w.lineY1 : y1;
       const bw = (x1 - x0) * scaleX;
-      const bh = (y1 - y0) * scaleY;
+      const bh = (ly1 - ly0) * scaleY;
       if (bw <= 0 || bh <= 0) continue;
+      const top = ly0 * scaleY;
+      // same line and a text-sized gap -> extend the run; wide gaps (columns,
+      // spaced UI labels) start a fresh chip
+      if (run && run.ly0 === ly0 && run.ly1 === ly1 &&
+          x0 >= run.x1 && x0 - run.x1 <= (ly1 - ly0) * 1.5) {
+        run.x1 = Math.max(run.x1, x1);
+      } else {
+        flushRun();
+        run = { x0, x1, ly0, ly1 };
+      }
       const span = document.createElement('span');
       span.className = 'w';
       span.textContent = w.text;
       const fontSize = Math.max(4, bh);
       span.style.left = x0 * scaleX + 'px';
-      span.style.top = y0 * scaleY + 'px';
+      span.style.top = top + 'px';
       span.style.fontSize = fontSize + 'px';
       // stretch the glyphs horizontally to match the word's real box, so the
       // selection highlight hugs the printed word
@@ -260,8 +384,45 @@
       if (natural > 0) span.style.transform = 'scaleX(' + bw / natural + ')';
       textLayer.appendChild(span);
       textLayer.appendChild(document.createTextNode(' '));
+      renderedWords.push({ span, text: w.text, lineY0: ly0, lineY1: ly1 });
     }
+    flushRun();
   }
+
+  // The word spans are absolutely positioned, so the whitespace text nodes
+  // between them collapse and the browser serializes a selection as bare words
+  // with no spaces or line breaks. Rebuild the copied text from the OCR words:
+  // a space between words on the same line, a newline (blank line on a wide
+  // vertical gap) between lines.
+  const sameLine = (a, b) => {
+    const overlap = Math.min(a.lineY1, b.lineY1) - Math.max(a.lineY0, b.lineY0);
+    const minH = Math.min(a.lineY1 - a.lineY0, b.lineY1 - b.lineY0);
+    return minH > 0 && overlap > minH * 0.5;
+  };
+  document.addEventListener('copy', (e) => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !renderedWords.length) return;
+    // reading order is preserved by renderedWords, so filtering keeps the
+    // words top-to-bottom, left-to-right regardless of drag direction
+    const picked = renderedWords.filter((w) => sel.containsNode(w.span, true));
+    if (!picked.length) return; // selection isn't in the text layer — leave default copy
+    let out = '';
+    let prev = null;
+    for (const w of picked) {
+      if (prev) {
+        if (sameLine(prev, w)) {
+          out += ' ';
+        } else {
+          const gap = w.lineY0 - prev.lineY1;
+          out += gap > (prev.lineY1 - prev.lineY0) * 0.6 ? '\n\n' : '\n';
+        }
+      }
+      out += w.text;
+      prev = w;
+    }
+    e.clipboardData.setData('text/plain', out);
+    e.preventDefault();
+  });
 </script>
 </body>
 </html>

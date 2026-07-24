@@ -4,3 +4,4 @@ tessdata/
 *.traineddata.gz
 dist/
 Thumbs.db
+.claude/

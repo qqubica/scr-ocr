@@ -1,7 +1,9 @@
 <!DOCTYPE html>
-<html>
+<!-- always over a dimmed frozen frame, so the glass chrome is pinned dark -->
+<html data-theme="dark">
 <head>
 <meta charset="utf-8" />
+<link rel="stylesheet" href="theme-soft-round.css" />
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; cursor: crosshair; user-select: none; background: #000; }
@@ -10,18 +12,23 @@
   #sel {
     position: absolute;
     display: none;
-    border: 1px solid #4da3ff;
+    border: 1px solid var(--sp-accent);
     background: transparent;
     box-shadow: 0 0 0 100000px rgba(0, 0, 0, 0.35);
   }
   #size {
     position: absolute;
     display: none;
-    background: #1d1f24;
-    color: #e8e8e8;
-    font: 12px 'Segoe UI', sans-serif;
-    padding: 3px 8px;
-    border-radius: 4px;
+    background: var(--sp-glass-bg);
+    backdrop-filter: blur(var(--sp-glass-blur));
+    -webkit-backdrop-filter: blur(var(--sp-glass-blur));
+    border: 1px solid var(--sp-glass-border);
+    box-shadow: var(--sp-glass-shadow), var(--sp-glass-highlight);
+    color: var(--sp-glass-text);
+    font: 12px var(--sp-font-mono);
+    font-variant-numeric: tabular-nums;
+    padding: 4px 12px;
+    border-radius: var(--sp-radius-full);
     pointer-events: none;
     white-space: nowrap;
   }
@@ -30,11 +37,15 @@
     top: 24px;
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(29, 31, 36, 0.9);
-    color: #cfcfcf;
-    font: 13px 'Segoe UI', sans-serif;
-    padding: 6px 14px;
-    border-radius: 6px;
+    background: var(--sp-glass-bg);
+    backdrop-filter: blur(var(--sp-glass-blur));
+    -webkit-backdrop-filter: blur(var(--sp-glass-blur));
+    border: 1px solid var(--sp-glass-border);
+    box-shadow: var(--sp-glass-shadow), var(--sp-glass-highlight);
+    color: var(--sp-glass-text);
+    font: 13px var(--sp-font-ui);
+    padding: 7px 16px;
+    border-radius: var(--sp-radius-full);
     pointer-events: none;
   }
 </style>
@@ -86,8 +97,8 @@
     sel.style.height = r.h + 'px';
     sizeBadge.style.display = 'block';
     sizeBadge.textContent = r.w + ' × ' + r.h;
-    const bx = Math.min(r.x, window.innerWidth - 90);
-    const by = r.y + r.h + 8 < window.innerHeight - 30 ? r.y + r.h + 8 : r.y - 28;
+    const bx = Math.min(r.x, window.innerWidth - 130);
+    const by = r.y + r.h + 8 < window.innerHeight - 36 ? r.y + r.h + 8 : r.y - 34;
     sizeBadge.style.left = bx + 'px';
     sizeBadge.style.top = Math.max(4, by) + 'px';
   }

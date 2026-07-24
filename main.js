@@ -11,11 +11,16 @@ const {
   clipboard,
   dialog,
   shell,
+  nativeTheme,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
-const HOTKEY = 'Control+Alt+S';
+const HOTKEY = 'PrintScreen';
+const HOTKEY_LABEL = 'PrtSc';
+// Speed · Soft Round theme grounds (theme-soft-round.css --sp-bg), used as the
+// window backgroundColor so nothing flashes before the renderer paints.
+const themeBg = () => (nativeTheme.shouldUseDarkColors ? '#191a1d' : '#faf9f7');
 // Tesseract language(s), '+'-separated. Traineddata is downloaded on first OCR
 // and cached in the app's user-data folder, so later runs work offline.
 const OCR_LANGS = 'eng+pol';
@@ -31,6 +36,9 @@ const selftestArg = process.argv.indexOf('--selftest');
 const SELFTEST = selftestArg !== -1;
 const SELFTEST_IMAGE = SELFTEST ? process.argv[selftestArg + 1] : null;
 const TEST_CAPTURE = process.argv.includes('--test-capture');
+// software compositing makes SELFTEST_SHOT captures deterministic — with GPU
+// compositing, capturePage can return a stale frame (esp. in sandboxed runs)
+if (SELFTEST) app.disableHardwareAcceleration();
 
 // ---------------------------------------------------------------- launcher
 
@@ -42,6 +50,7 @@ function createLauncher() {
     maximizable: false,
     fullscreenable: false,
     show: !SELFTEST && !TEST_CAPTURE,
+    backgroundColor: themeBg(),
     icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: { nodeIntegration: true, contextIsolation: false },
   });
@@ -61,10 +70,10 @@ function createTray() {
   let icon = nativeImage.createFromPath(iconPath);
   if (icon.isEmpty()) icon = nativeImage.createEmpty();
   tray = new Tray(icon.resize({ width: 16, height: 16 }));
-  tray.setToolTip(`SCR-OCR — area screenshot + OCR (${HOTKEY.replace(/Control/, 'Ctrl')})`);
+  tray.setToolTip(`SCR-OCR — area screenshot + OCR (${HOTKEY_LABEL})`);
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: `Take screenshot\t${HOTKEY.replace(/Control/, 'Ctrl')}`, click: () => startCapture() },
+      { label: `Take screenshot\t${HOTKEY_LABEL}`, click: () => startCapture() },
       { label: 'Show window', click: () => launcherWin.show() },
       { type: 'separator' },
       {
@@ -127,6 +136,7 @@ async function startCapture() {
         skipTaskbar: true,
         alwaysOnTop: true,
         show: false,
+        backgroundColor: '#000000',
         webPreferences: { nodeIntegration: true, contextIsolation: false },
       });
       win.setAlwaysOnTop(true, 'screen-saver');
@@ -175,7 +185,8 @@ ipcMain.handle('overlay-get-image', (e, displayId) => {
 
 ipcMain.on('overlay-cancel', () => closeOverlays());
 
-ipcMain.on('launcher-capture', () => startCapture());
+// sent by the launcher's big button and the result window's "New" button
+ipcMain.on('start-capture', () => startCapture());
 
 ipcMain.on('overlay-selected', (e, { displayId, rect }) => {
   const cap = captures.get(Number(displayId)) || captures.get(displayId);
@@ -210,7 +221,10 @@ function openResult(image, scaleFactor, screenRect) {
   const cssH = Math.round(size.height / scaleFactor);
 
   const TOOLBAR = 52;
-  const MIN_W = 560;
+  // width floor for narrow captures: all toolbar buttons (~545px in their widest
+  // state, "OCR ✓" + "📌 Pinned") plus enough #status room that short feedback
+  // ("Image copied", "Saved") stays readable; longer statuses ellipsize
+  const MIN_W = 640;
   const winW = Math.max(cssW + 24, MIN_W);
   const winH = cssH + TOOLBAR + 24;
 
@@ -234,6 +248,7 @@ function openResult(image, scaleFactor, screenRect) {
     skipTaskbar: false,
     alwaysOnTop: true,
     show: false,
+    backgroundColor: themeBg(),
     icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: { nodeIntegration: true, contextIsolation: false },
   });
@@ -298,17 +313,69 @@ ipcMain.handle('run-ocr', async (e, pngBase64) => {
   });
   try {
     const { data } = await worker.recognize(Buffer.from(pngBase64, 'base64'));
-    let words = data.words;
-    if (!words || !words.length) {
-      words = [];
-      for (const block of data.blocks || [])
-        for (const par of block.paragraphs || [])
-          for (const line of par.lines || [])
-            for (const w of line.words || []) words.push(w);
+    // A line's raw bbox tracks the ink that happens to be in it — "some more news"
+    // (x-height only) gets a shorter box than "Typography!" in the same font.
+    // Tesseract's fitted row metrics (baseline + row_height/descenders, where
+    // row_height spans ascender top to descender bottom) describe the font
+    // instead, so highlight height stays uniform across lines of the same size.
+    const lineExtent = (line) => {
+      const bb = line.bbox;
+      const ra = line.rowAttributes;
+      const bl = line.baseline;
+      if (bb && ra && ra.row_height > 0 && bl && bl.has_baseline) {
+        const baseY = (bl.y0 + bl.y1) / 2;
+        const desc = Math.max(0, ra.descenders);
+        const y1 = baseY + desc;
+        const y0 = y1 - ra.row_height;
+        // trust the metrics only when they're sane against the actual ink —
+        // row fitting can go wrong on sparse UI text
+        const ink = bb.y1 - bb.y0;
+        const overlap = Math.min(y1, bb.y1) - Math.max(y0, bb.y0);
+        if (overlap >= ink * 0.5 && ra.row_height >= ink * 0.5 && ra.row_height <= ink * 3)
+          return { y0, y1, baseY, rowH: ra.row_height, desc };
+      }
+      return bb ? { y0: bb.y0, y1: bb.y1 } : null;
+    };
+    // walk the layout hierarchy so each word carries its line's vertical extent —
+    // the renderer sizes highlight boxes per line, not per glyph bbox
+    const lines = [];
+    for (const block of data.blocks || [])
+      for (const par of block.paragraphs || [])
+        for (const line of par.lines || []) {
+          const ws = (line.words || []).filter((w) => w.text && w.text.trim() && w.bbox);
+          if (ws.length) lines.push({ ext: lineExtent(line), ws });
+        }
+    // metrics still wobble a little line-to-line (a line with no ascender or
+    // descender ink gives the row fit nothing to work with), so snap lines of
+    // near-identical size to their group's median — same-size text then gets
+    // pixel-identical bars, while genuinely different sizes stay apart
+    const fitted = lines.map((l) => l.ext).filter((x) => x && x.rowH);
+    fitted.sort((a, b) => a.rowH - b.rowH);
+    let group = [];
+    const snapGroup = () => {
+      if (group.length > 1) {
+        const med = (arr) => arr.sort((a, b) => a - b)[Math.floor(arr.length / 2)];
+        const h = med(group.map((x) => x.rowH));
+        const d = med(group.map((x) => x.desc));
+        for (const x of group) { x.y1 = x.baseY + d; x.y0 = x.y1 - h; }
+      }
+      group = [];
+    };
+    for (const x of fitted) {
+      if (group.length && x.rowH > group[0].rowH * 1.15) snapGroup();
+      group.push(x);
     }
-    words = (words || [])
-      .filter((w) => w.text && w.text.trim() && w.bbox)
-      .map((w) => ({ text: w.text, bbox: w.bbox }));
+    snapGroup();
+    let words = [];
+    for (const { ext, ws } of lines)
+      for (const w of ws) {
+        const lb = ext || w.bbox;
+        words.push({ text: w.text, bbox: w.bbox, lineY0: lb.y0, lineY1: lb.y1 });
+      }
+    if (!words.length)
+      words = (data.words || [])
+        .filter((w) => w.text && w.text.trim() && w.bbox)
+        .map((w) => ({ text: w.text, bbox: w.bbox, lineY0: w.bbox.y0, lineY1: w.bbox.y1 }));
     return { text: (data.text || '').trim(), words };
   } finally {
     await worker.terminate();
@@ -320,11 +387,25 @@ ipcMain.handle('run-ocr', async (e, pngBase64) => {
 // `electron . --selftest <image.png>` loads the image as if it were the captured
 // region, auto-runs OCR in the result window, prints the text to stdout and exits.
 
-ipcMain.on('selftest-ocr-done', (e, { text, words }) => {
+ipcMain.on('selftest-ocr-done', async (e, { text, words }) => {
   console.log('SELFTEST_WORDS=' + words);
   console.log('SELFTEST_TEXT_BEGIN');
   console.log(text);
   console.log('SELFTEST_TEXT_END');
+  // SELFTEST_SHOT=<path.png>: also save a screenshot of the result window with
+  // the text layer visible, for eyeballing the overlay without manual UI
+  if (process.env.SELFTEST_SHOT) {
+    try {
+      await new Promise((r) => setTimeout(r, 300)); // let the text layer paint
+      e.sender.invalidate(); // force a fresh composite — capturePage can return a stale frame
+      await new Promise((r) => setTimeout(r, 200));
+      const shot = await e.sender.capturePage();
+      fs.writeFileSync(process.env.SELFTEST_SHOT, shot.toPNG());
+      console.log('SELFTEST_SHOT=' + process.env.SELFTEST_SHOT);
+    } catch (err) {
+      console.error('SELFTEST_SHOT_ERROR: ' + err);
+    }
+  }
   app.isQuitting = true;
   app.quit();
 });
@@ -361,6 +442,12 @@ if (!gotLock && !SELFTEST) {
       }
       openResult(img, 1, { x: 100, y: 100, w: img.getSize().width, h: img.getSize().height });
     }
+  });
+
+  app.on('before-quit', () => {
+    // any quit request (tray, OS shutdown, dev-reload) must win over the
+    // launcher's minimize-to-tray close handler
+    app.isQuitting = true;
   });
 
   app.on('window-all-closed', () => {

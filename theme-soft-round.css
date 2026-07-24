@@ -1,0 +1,523 @@
+/* ==========================================================================
+   Speed theme · Soft Round — tokens + core recipes
+   Warm paper & soft charcoal grounds (no pure black/white), raised cards
+   with soft shadows, the accent promoted to a companion, and eased corners:
+   cards 24, tooling 16 (everything interactive is full-round).
+
+   Modes
+     · Follows the OS via prefers-color-scheme by default.
+     · Force a mode by stamping data-theme="light" | "dark" on <html>.
+     · Pin any subtree with .theme-light / .theme-dark.
+
+   Keep the FOUR token blocks in sync when editing:
+     1. :root (light default)          2. @media dark
+     3. data-theme/light + .theme-light  4. data-theme/dark + .theme-dark
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1 · Mode-invariant tokens
+   -------------------------------------------------------------------------- */
+:root {
+  /* type — rounded where the platform has it, system everywhere else */
+  --sp-font-ui: ui-rounded, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif;
+  --sp-font-mono: ui-monospace, "JetBrains Mono", monospace;
+
+  /* radii — still pills and cards, eased a touch further than Soft */
+  --sp-radius-full: 999px; /* interactive: buttons, switch, select, chips */
+  --sp-radius-card: 24px;  /* content cards, panels, dialogs */
+  --sp-radius-tool: 16px;  /* dense tooling surfaces */
+
+  /* motion — same tempo; entrances get a gentle spring */
+  --sp-ease-snap: cubic-bezier(0.22, 1, 0.36, 1);   /* glass: still no overshoot */
+  --sp-ease-spring: cubic-bezier(0.34, 1.35, 0.64, 1); /* cards: soft bounce-in */
+  --sp-dur-hover: 0.15s;
+  --sp-dur-in: 0.14s;
+  --sp-dur-out: 0.7s;
+  --sp-dur-snap: 0.32s;
+  --sp-dur-glide: 0.12s;
+  --sp-dur-enter: 0.28s;
+  --sp-press-scale: 0.94;      /* softer press */
+  --sp-rest-opacity: 0.9;      /* the pill is a touch less shy */
+  --sp-disabled-opacity: 0.4;
+
+  /* glass — airier: lighter fill, more blur, brighter hairline */
+  --sp-glass-bg: rgba(24, 26, 30, 0.55);
+  --sp-glass-blur: 10px;
+  --sp-glass-border: rgba(255, 255, 255, 0.16);
+  --sp-glass-text: #ffffff;
+  --sp-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  --sp-glass-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
+  --sp-glass-shadow-lift: 0 10px 30px rgba(0, 0, 0, 0.5);
+  --sp-glass-hover-soft: rgba(255, 255, 255, 0.06);
+  --sp-glass-hover: rgba(255, 255, 255, 0.09);
+  --sp-glass-focus: rgba(255, 255, 255, 0.12);
+}
+
+/* --------------------------------------------------------------------------
+   2 · Morning (light) — default. Warm paper ground, white raised cards.
+   -------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+  --sp-bg: #faf9f7;             /* warm paper — never pure white */
+  --sp-surface: #ffffff;        /* raised card on the paper */
+  --sp-grad-hi: #ffffff;
+  --sp-text: #302e29;           /* soft warm charcoal — never pure black */
+  --sp-muted: #6e6961;
+  --sp-border: #eae6df;
+  --sp-border-strong: #d5cfc5;
+  --sp-hover: rgba(48, 46, 41, 0.05);
+  --sp-hover-strong: rgba(48, 46, 41, 0.09);
+  --sp-primary: #2e87cf;        /* filled friendly blue, not an inversion */
+  --sp-on-primary: #ffffff;
+  --sp-primary-hover: #2a7abc;
+  --sp-switch-track: #d5cfc5;
+  --sp-accent: #2e87cf;
+  --sp-accent-tint: rgba(46, 135, 207, 0.12);
+  --sp-shadow-card: 0 2px 6px rgba(35, 32, 26, 0.05), 0 12px 32px rgba(35, 32, 26, 0.1);
+}
+
+/* --------------------------------------------------------------------------
+   3 · Dusk (dark) — via OS preference. Soft charcoal, raised surfaces.
+   -------------------------------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --sp-bg: #191a1d;
+    --sp-surface: #232428;
+    --sp-grad-hi: #27282d;
+    --sp-text: #e8e6e1;
+    --sp-muted: #a09c94;
+    --sp-border: #2f3035;
+    --sp-border-strong: #47484f;
+    --sp-hover: rgba(255, 255, 255, 0.05);
+    --sp-hover-strong: rgba(255, 255, 255, 0.08);
+    --sp-primary: #5aabee;      /* brighter fill, dark label */
+    --sp-on-primary: #10202e;
+    --sp-primary-hover: #74b9f2;
+    --sp-switch-track: #47484f;
+    --sp-accent: #5aabee;
+    --sp-accent-tint: rgba(90, 171, 238, 0.16);
+    --sp-shadow-card: 0 2px 6px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.4);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   4 · Explicit overrides — data-theme on <html> beats the OS; the scope
+       classes pin a subtree (e.g. side-by-side specimens).
+   -------------------------------------------------------------------------- */
+:root[data-theme="light"],
+.theme-light {
+  color-scheme: light;
+  --sp-bg: #faf9f7;
+  --sp-surface: #ffffff;
+  --sp-grad-hi: #ffffff;
+  --sp-text: #302e29;
+  --sp-muted: #6e6961;
+  --sp-border: #eae6df;
+  --sp-border-strong: #d5cfc5;
+  --sp-hover: rgba(48, 46, 41, 0.05);
+  --sp-hover-strong: rgba(48, 46, 41, 0.09);
+  --sp-primary: #2e87cf;
+  --sp-on-primary: #ffffff;
+  --sp-primary-hover: #2a7abc;
+  --sp-switch-track: #d5cfc5;
+  --sp-accent: #2e87cf;
+  --sp-accent-tint: rgba(46, 135, 207, 0.12);
+  --sp-shadow-card: 0 2px 6px rgba(35, 32, 26, 0.05), 0 12px 32px rgba(35, 32, 26, 0.1);
+}
+
+:root[data-theme="dark"],
+.theme-dark {
+  color-scheme: dark;
+  --sp-bg: #191a1d;
+  --sp-surface: #232428;
+  --sp-grad-hi: #27282d;
+  --sp-text: #e8e6e1;
+  --sp-muted: #a09c94;
+  --sp-border: #2f3035;
+  --sp-border-strong: #47484f;
+  --sp-hover: rgba(255, 255, 255, 0.05);
+  --sp-hover-strong: rgba(255, 255, 255, 0.08);
+  --sp-primary: #5aabee;
+  --sp-on-primary: #10202e;
+  --sp-primary-hover: #74b9f2;
+  --sp-switch-track: #47484f;
+  --sp-accent: #5aabee;
+  --sp-accent-tint: rgba(90, 171, 238, 0.16);
+  --sp-shadow-card: 0 2px 6px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* ==========================================================================
+   Recipes — same components, warmer temperament. Opt-in classes only.
+   ========================================================================== */
+
+/* ---- document ground (opt in on <body>) ---- */
+.sp-body {
+  margin: 0;
+  background: var(--sp-bg);
+  color: var(--sp-text);
+  font: 14px/1.5 var(--sp-font-ui);
+}
+
+/* ---- glass pill — a floating cluster of controls over media ----
+   Pill as in shape. Sized through --s so the whole cluster can scale with
+   its host media frame. */
+.sp-pill {
+  --s: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: calc(0px * var(--s));
+  padding: calc(2px * var(--s));
+  border-radius: var(--sp-radius-full);
+  background: var(--sp-glass-bg);
+  backdrop-filter: blur(var(--sp-glass-blur));
+  -webkit-backdrop-filter: blur(var(--sp-glass-blur));
+  border: 1px solid var(--sp-glass-border);
+  box-shadow: var(--sp-glass-shadow), var(--sp-glass-highlight);
+  font-family: var(--sp-font-mono);
+  color: var(--sp-glass-text);
+  white-space: nowrap;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+  opacity: var(--sp-rest-opacity);
+  transform-origin: center;
+  /* glass still never overshoots — it lives inside a media frame */
+  transition: opacity var(--sp-dur-in) ease,
+    transform var(--sp-dur-snap) var(--sp-ease-snap);
+}
+.sp-pill:hover { opacity: 1; }
+.sp-pill.is-pressing { transition: transform var(--sp-dur-glide) ease-out; cursor: grabbing; }
+.sp-pill.is-lifted {
+  opacity: 1;
+  box-shadow: var(--sp-glass-shadow-lift),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.sp-pill.is-idle {
+  opacity: 0;
+  pointer-events: none; /* never block clicks on the media while hidden */
+  transition: opacity var(--sp-dur-out) ease;
+}
+.sp-pill-btn {
+  all: unset;
+  box-sizing: border-box;
+  width: calc(27px * var(--s));
+  height: calc(27px * var(--s));
+  display: grid;
+  place-items: center;
+  border-radius: var(--sp-radius-full);
+  color: var(--sp-glass-text);
+  font-size: calc(15px * var(--s));
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+.sp-pill-btn:hover { background: var(--sp-glass-hover); }
+.sp-pill-btn:focus-visible { outline: none; background: var(--sp-glass-focus); }
+.sp-pill-btn:active { transform: scale(var(--sp-press-scale)); }
+.sp-pill-btn:disabled { opacity: var(--sp-disabled-opacity); cursor: default; }
+/* an extra control appended after the stepper cluster (e.g. reset) —
+   adjacent round buttons otherwise touch edge-to-edge; when it closes the
+   pill it also gets a touch of air before the cap */
+.sp-pill-btn + .sp-pill-btn { margin-inline-start: calc(1px * var(--s)); }
+.sp-pill-btn + .sp-pill-btn:last-child { margin-inline-end: calc(3px * var(--s)); }
+.sp-pill-read {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(27px * var(--s));
+  padding: 0 calc(4px * var(--s));
+  border-radius: var(--sp-radius-full);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+.sp-pill-read:hover { background: var(--sp-glass-hover-soft); }
+/* a readout that starts or ends the pill sits against the rounded cap —
+   inset it to match the visual air a round button leaves on the other cap */
+.sp-pill-read:first-child { padding-inline-start: calc(13px * var(--s)); }
+.sp-pill-read:last-child { padding-inline-end: calc(13px * var(--s)); }
+.sp-pill-num {
+  display: inline-block;
+  width: calc(36px * var(--s)); /* fixed slot — the cluster never resizes;
+    sized for five tabular glyphs ("1.25×", "02:41") */
+  text-align: center;
+  font-size: calc(13px * var(--s));
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  /* digits have no descenders, so the em-box centering rides optically
+     high — settle the value onto the pill's true center */
+  transform: translateY(calc(1px * var(--s)));
+}
+
+/* ---- buttons — the primary is filled accent now, taller and airier ---- */
+.sp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 18px;
+  border: none;
+  border-radius: var(--sp-radius-full);
+  background: var(--sp-primary);
+  color: var(--sp-on-primary);
+  font-family: var(--sp-font-ui);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--sp-dur-hover);
+}
+.sp-btn:hover { background: var(--sp-primary-hover); }
+.sp-btn:active { transform: scale(var(--sp-press-scale)); }
+.sp-btn--outline {
+  background: transparent;
+  color: var(--sp-text);
+  border: 1px solid var(--sp-border-strong);
+}
+.sp-btn--outline:hover { background: var(--sp-hover-strong); }
+.sp-btn--ghost {
+  background: none;
+  color: var(--sp-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  height: auto;
+  padding: 2px;
+}
+.sp-btn--ghost:hover { color: var(--sp-accent); text-decoration: underline; background: none; }
+.sp-btn:focus-visible,
+.sp-select:focus-visible,
+.sp-switch input:focus-visible ~ .sp-switch-track {
+  outline: 2px solid var(--sp-accent);
+  outline-offset: 2px;
+}
+
+/* ---- chips / tags — tinted, not solid ---- */
+.sp-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--sp-radius-full);
+  font-family: var(--sp-font-ui);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+.sp-chip--accent { background: var(--sp-accent-tint); color: var(--sp-primary-hover); }
+.sp-chip--neutral { background: var(--sp-border); color: var(--sp-text); }
+
+/* ---- switch (38 × 22, knob 18) — checked = accent, knob always white ---- */
+.sp-switch { position: relative; width: 38px; height: 22px; flex: none; cursor: pointer; display: inline-block; }
+.sp-switch input {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  margin: 0; opacity: 0; cursor: pointer;
+}
+.sp-switch-track {
+  position: absolute; inset: 0;
+  background: var(--sp-switch-track);
+  border-radius: var(--sp-radius-full);
+  transition: background var(--sp-dur-hover) ease;
+}
+.sp-switch-knob {
+  position: absolute; top: 2px; left: 2px;
+  width: 18px; height: 18px;
+  border-radius: var(--sp-radius-full);
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(20, 18, 14, 0.2);
+  transition: left var(--sp-dur-hover) ease;
+}
+.sp-switch input:checked ~ .sp-switch-track { background: var(--sp-accent); }
+.sp-switch input:checked ~ .sp-switch-knob { left: 18px; }
+
+/* ---- text input ---- */
+.sp-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sp-muted);
+}
+.sp-label .sp-input { margin-top: 6px; }
+.sp-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  height: 40px;
+  padding: 0 16px;
+  background: var(--sp-surface);
+  color: var(--sp-text);
+  border: 1px solid var(--sp-border-strong);
+  border-radius: var(--sp-radius-full);
+  font: 13px/1 var(--sp-font-ui);
+  transition: border-color var(--sp-dur-hover) ease;
+}
+.sp-input::placeholder { color: var(--sp-muted); }
+.sp-input:hover { border-color: var(--sp-muted); }
+.sp-input:focus-visible {
+  outline: 2px solid var(--sp-accent);
+  outline-offset: 2px;
+  border-color: var(--sp-accent);
+}
+
+/* ---- select ---- */
+.sp-select {
+  background: var(--sp-surface);
+  color: var(--sp-text);
+  border: 1px solid var(--sp-border-strong);
+  border-radius: var(--sp-radius-full);
+  padding: 7px 12px;
+  font: inherit;
+  font-family: var(--sp-font-ui);
+  font-size: 13px;
+  cursor: pointer;
+}
+.sp-select option { background: var(--sp-surface); }
+/* Extending menu — where the engine supports the customizable picker
+   (Chromium), the option list expands seamlessly from the button itself:
+   anchored flush to its bottom edge, at least the trigger's width, springing
+   open from the top. Other engines keep the OS dropdown. */
+.sp-select,
+.sp-select::picker(select) {
+  appearance: base-select;
+}
+.sp-select::picker(select) {
+  margin: 0;
+  top: anchor(bottom);
+  left: anchor(left);
+  min-width: anchor-size(width);
+  background: var(--sp-surface);
+  color: var(--sp-text);
+  border: 1px solid var(--sp-border-strong);
+  border-radius: var(--sp-radius-tool);
+  padding: 4px;
+  box-shadow: var(--sp-shadow-card);
+  opacity: 0;
+  transform: translateY(-6px) scaleY(0.92);
+  transform-origin: top;
+  transition: opacity var(--sp-dur-in) ease,
+    transform var(--sp-dur-enter) var(--sp-ease-spring),
+    display var(--sp-dur-enter) allow-discrete,
+    overlay var(--sp-dur-enter) allow-discrete;
+}
+.sp-select:open::picker(select) {
+  opacity: 1;
+  transform: none;
+}
+@starting-style {
+  .sp-select:open::picker(select) {
+    opacity: 0;
+    transform: translateY(-6px) scaleY(0.92);
+  }
+}
+.sp-select option {
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.sp-select option:hover,
+.sp-select option:focus-visible { background: var(--sp-hover-strong); }
+.sp-select option:checked { background: var(--sp-accent-tint); }
+
+/* ---- settings panel + rows — a raised card on the paper ground ---- */
+.sp-panel {
+  width: 320px;
+  max-width: 100%;
+  background: var(--sp-surface);
+  border: 1px solid var(--sp-border);
+  border-radius: var(--sp-radius-card);
+  box-shadow: var(--sp-shadow-card);
+  overflow: hidden;
+}
+.sp-panel-header { display: flex; align-items: center; gap: 10px; padding: 16px; }
+.sp-panel-title { font-size: 15px; font-weight: 700; margin: 0; }
+.sp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 16px;
+  border-top: 1px solid var(--sp-border);
+}
+.sp-row-text { min-width: 0; }
+.sp-row-title { font-size: 13px; font-weight: 600; color: var(--sp-text); }
+.sp-row-sub { font-size: 11.5px; color: var(--sp-muted); line-height: 1.5; }
+.sp-row--clickable { cursor: pointer; transition: background var(--sp-dur-hover) ease; }
+.sp-row--clickable:hover { background: var(--sp-hover); }
+
+/* ---- promo / dialog card ---- */
+.sp-card {
+  position: relative;
+  width: 300px;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 18px;
+  border-radius: var(--sp-radius-card);
+  background: linear-gradient(180deg, var(--sp-grad-hi), var(--sp-surface));
+  border: 1px solid var(--sp-border);
+  box-shadow: var(--sp-shadow-card);
+  color: var(--sp-text);
+  font: 13px/1.45 var(--sp-font-ui);
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+/* entrances may spring a little — the one place Soft allows overshoot */
+.sp-card--enter { animation: sp-card-in var(--sp-dur-enter) var(--sp-ease-spring); }
+@keyframes sp-card-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+/* accent variant — a soft tinted ring instead of a hard border */
+.sp-card--accent {
+  border-color: var(--sp-accent);
+  box-shadow: var(--sp-shadow-card), 0 0 0 3px var(--sp-accent-tint);
+}
+.sp-card-head { display: flex; align-items: center; gap: 9px; }
+.sp-card-title { font-size: 13px; font-weight: 600; }
+.sp-card-handle { font-size: 11px; color: var(--sp-muted); }
+.sp-card-body { font-size: 13px; line-height: 1.5; }
+.sp-card-buttons { display: flex; gap: 8px; }
+.sp-card-buttons .sp-btn { flex: 1; }
+.sp-card-note {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--sp-muted);
+  border-top: 1px solid var(--sp-border);
+  padding-top: 10px;
+}
+.sp-card-note b { color: var(--sp-text); font-weight: 600; }
+.sp-card-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  color: var(--sp-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+}
+.sp-card-close:hover { color: var(--sp-text); }
+
+/* ---- round icon badge — a tinted friendly disc, not an ink inversion ---- */
+.sp-badge {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: var(--sp-radius-full);
+  background: var(--sp-accent-tint);
+  color: var(--sp-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---- reduced motion ---- */
+@media (prefers-reduced-motion: reduce) {
+  [class^="sp-"],
+  [class*=" sp-"] {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
