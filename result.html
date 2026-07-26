@@ -202,6 +202,7 @@
     img.src = 'data:image/png;base64,' + pngBase64;
     img.style.width = data.cssW + 'px';
     img.style.height = data.cssH + 'px';
+    if (data.copied) flashStatus('Copied to clipboard');
     // OCR runs right away so the button can reflect whether text was found
     img.decode().then(runOcr).catch(runOcr);
   });
@@ -233,7 +234,10 @@
 
   btnClose.addEventListener('click', () => ipcRenderer.send('result-close'));
 
-  document.getElementById('newShot').addEventListener('click', () => ipcRenderer.send('start-capture'));
+  // New = take another screenshot, discarding this (and any other) preview
+  document.getElementById('newShot').addEventListener('click', () =>
+    ipcRenderer.send('start-capture', { discard: true })
+  );
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') ipcRenderer.send('result-close');

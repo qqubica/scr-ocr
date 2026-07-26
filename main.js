@@ -55,6 +55,11 @@ function createLauncher() {
     webPreferences: { nodeIntegration: true, contextIsolation: false },
   });
   launcherWin.removeMenu();
+  // WDA_EXCLUDEFROMCAPTURE: the window stays visible to the user but never
+  // appears in captured frames — so startCapture doesn't have to hide app
+  // windows and wait for the compositor. Side effect: invisible to screen
+  // sharing / other capture tools too.
+  launcherWin.setContentProtection(true);
   launcherWin.loadFile('launcher.html');
   launcherWin.on('close', (e) => {
     // minimize to tray instead of quitting
@@ -90,16 +95,24 @@ function createTray() {
 
 // ---------------------------------------------------------------- capture
 
-async function startCapture() {
+async function startCapture({ discard = false } = {}) {
   if (capturing || overlayWins.length) return;
   capturing = true;
   try {
-    const launcherWasVisible = launcherWin && launcherWin.isVisible();
-    if (launcherWasVisible) {
-      launcherWin.hide();
-      // give the compositor a beat to actually remove the window
-      await new Promise((r) => setTimeout(r, 180));
+    // "New" discards every open preview — the old screenshot is either saved
+    // by then or explicitly thrown away. hide() before destroy(): destroying
+    // a visible window plays the OS close animation.
+    if (discard) {
+      for (const w of BrowserWindow.getAllWindows()) {
+        if (w !== launcherWin && !w.isDestroyed()) {
+          if (w.isVisible()) w.hide();
+          w.destroy();
+        }
+      }
     }
+    // every app window is content-protected (WDA_EXCLUDEFROMCAPTURE, see
+    // createLauncher/openResult), so none of our own UI can appear in the
+    // frame — grab it immediately, no hiding or compositor wait needed
 
     const displays = screen.getAllDisplays();
     const maxW = Math.max(...displays.map((d) => d.size.width * d.scaleFactor));
@@ -185,8 +198,10 @@ ipcMain.handle('overlay-get-image', (e, displayId) => {
 
 ipcMain.on('overlay-cancel', () => closeOverlays());
 
-// sent by the launcher's big button and the result window's "New" button
-ipcMain.on('start-capture', () => startCapture());
+// sent by the launcher's big button and the result window's "New" button.
+// "New" ({discard: true}) throws away every open preview — the old screenshot
+// is either saved by then or explicitly discarded in favor of the next one.
+ipcMain.on('start-capture', (e, opts) => startCapture(opts));
 
 ipcMain.on('overlay-selected', (e, { displayId, rect }) => {
   const cap = captures.get(Number(displayId)) || captures.get(displayId);
@@ -204,17 +219,25 @@ ipcMain.on('overlay-selected', (e, { displayId, rect }) => {
   crop.height = Math.min(crop.height, imgSize.height - crop.y);
   if (crop.width < 3 || crop.height < 3) return;
   const cropped = cap.image.crop(crop);
-  openResult(cropped, sf, {
-    x: cap.bounds.x + rect.x,
-    y: cap.bounds.y + rect.y,
-    w: rect.w,
-    h: rect.h,
-  });
+  // the shot lands on the clipboard immediately — Copy in the result window
+  // stays for re-copying after the clipboard is overwritten
+  clipboard.writeImage(cropped);
+  openResult(
+    cropped,
+    sf,
+    {
+      x: cap.bounds.x + rect.x,
+      y: cap.bounds.y + rect.y,
+      w: rect.w,
+      h: rect.h,
+    },
+    { copied: true }
+  );
 });
 
 // ---------------------------------------------------------------- result
 
-function openResult(image, scaleFactor, screenRect) {
+function openResult(image, scaleFactor, screenRect, { copied = false } = {}) {
   const png = image.toPNG();
   const size = image.getSize();
   const cssW = Math.round(size.width / scaleFactor);
@@ -253,6 +276,9 @@ function openResult(image, scaleFactor, screenRect) {
     webPreferences: { nodeIntegration: true, contextIsolation: false },
   });
   win.removeMenu();
+  // keep previews out of any screen capture (see createLauncher); skipped in
+  // selftest so SELFTEST_SHOT's capturePage stays free of affinity flags
+  if (!SELFTEST) win.setContentProtection(true);
   win.loadFile('result.html', { query: SELFTEST ? { selftest: '1' } : {} });
   win.webContents.once('did-finish-load', () => {
     win.webContents.send('result-init', {
@@ -261,6 +287,7 @@ function openResult(image, scaleFactor, screenRect) {
       cssH,
       physW: size.width,
       physH: size.height,
+      copied,
     });
   });
   win.once('ready-to-show', () => win.show());
@@ -343,7 +370,7 @@ ipcMain.handle('run-ocr', async (e, pngBase64) => {
       for (const par of block.paragraphs || [])
         for (const line of par.lines || []) {
           const ws = (line.words || []).filter((w) => w.text && w.text.trim() && w.bbox);
-          if (ws.length) lines.push({ ext: lineExtent(line), ws });
+          if (ws.length) lines.push({ ext: lineExtent(line), bb: line.bbox, ws });
         }
     // metrics still wobble a little line-to-line (a line with no ascender or
     // descender ink gives the row fit nothing to work with), so snap lines of
@@ -366,6 +393,19 @@ ipcMain.handle('run-ocr', async (e, pngBase64) => {
       group.push(x);
     }
     snapGroup();
+    // Height is settled; now recenter each bar on its line's ink. Anchoring at
+    // baseline+descenders leaves lines with no descender ink ("23°C", digits,
+    // ALL CAPS) top-flush in a bar that hangs below them, and glyphs above the
+    // fitted ascender (², quote marks, °) can even poke out of the bar. For
+    // lines whose ink spans the full box this is a no-op, so mixed-text bars
+    // keep their baseline rhythm.
+    for (const { ext, bb } of lines) {
+      if (!ext || !ext.rowH || !bb) continue;
+      const half = (ext.y1 - ext.y0) / 2;
+      const mid = (bb.y0 + bb.y1) / 2;
+      ext.y0 = mid - half;
+      ext.y1 = mid + half;
+    }
     let words = [];
     for (const { ext, ws } of lines)
       for (const w of ws) {

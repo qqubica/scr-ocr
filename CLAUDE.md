@@ -15,7 +15,17 @@ Public repo: `qqubica/scr-ocr` (MIT). Nested git repo inside the Claude workspac
   IPC handler; traineddata cached in `userData/tessdata`.
 - `overlay.html` — fullscreen frozen-frame region selector (one window per display).
 - `result.html` — pinned preview: New (screenshot) / Copy / Save / OCR / Copy text /
-  Pin. Text layer =
+  Pin. **New discards all open previews** (hidden, then destroyed — hide first,
+  or the OS close animation's fading ghost lands in the capture) — the old shot
+  is either saved by then or thrown away. Launcher + previews are
+  **content-protected** (`setContentProtection`, WDA_EXCLUDEFROMCAPTURE): they
+  stay on screen but never appear in captured frames, so capture starts with
+  zero delay (no hide-and-wait). Trade-off: the app's windows are also invisible
+  to screen sharing and other capture tools. Skipped in selftest (capturePage
+  shots). **Every capture is auto-copied to the clipboard** on selection
+  (`overlay-selected` in `main.js`; the result window flashes "Copied to clipboard") —
+  the Copy button stays for re-copying later. Selftest bypasses this (flag passed
+  through `openResult` → `result-init`), so test runs don't touch the clipboard. Text layer =
   absolutely positioned transparent spans per OCR word, `scaleX`-stretched to the
   word's bbox so native browser selection lines up with pixels. Highlights are
   quiet glass bars in a separate **untransformed** layer (`#hlLayer` — borders/radii
@@ -25,7 +35,12 @@ Public repo: `qqubica/scr-ocr` (MIT). Nested git repo inside the Claude workspac
   fallback when the fit looks implausible; lines with near-identical row heights
   then snap to their group's median), so bars are pixel-identical across lines
   of the same text size no matter which glyphs occur (x-height only, caps,
-  descenders). Copying a selection is handled by a `copy` listener that rebuilds
+  descenders). After the height is settled each bar is **recentered on its
+  line's ink bbox** — baseline+descender anchoring left descender-less lines
+  ("23°C", digits, ALL CAPS) top-flush with all the slack hanging below, and
+  glyphs above the fitted ascender (², °, quote marks) could poke out of the
+  bar; for full-ink lines recentering is a no-op, so mixed-text paragraphs
+  keep their baseline rhythm. Copying a selection is handled by a `copy` listener that rebuilds
   the text from the OCR words (`renderedWords`, reading order) — the spans are
   out of flow so the browser would otherwise serialize the range as bare words
   with no whitespace. It inserts a space between words on the same line (vertical
