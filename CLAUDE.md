@@ -15,8 +15,16 @@ when editing.
   `dist/SCR-OCR-win32-x64` (asar; OCR from asar verified via selftest on the
   packaged exe). Exe icon: `assets/icon.ico`, generated from the 64px
   `assets/icon.png` (multi-size, PNG-entry ico).
-- Local install = copy that folder to `%LOCALAPPDATA%\Programs\SCR-OCR` +
-  Start Menu shortcut (no installer, by design). Installed 2026-07-23.
+- Local install (no installer, by design; installed 2026-07-23, layout changed
+  2026-08-02): **Smart App Control (enforced on this PC) blocks the packaged
+  `SCR-OCR.exe`** — electron-packager's rcedit branding (icon/version) gives the
+  exe a unique unknown hash, and SAC allows unsigned binaries only by hash
+  reputation. So `%LOCALAPPDATA%\Programs\SCR-OCR` holds the **unmodified
+  `node_modules\electron\dist` files with `electron.exe` copied to
+  `SCR-OCR.exe`** (byte-identical → keeps vanilla Electron's SAC reputation) +
+  the dist build's `resources\app.asar` + `icon.ico` (Start Menu shortcut's
+  IconLocation — the exe itself has the generic Electron icon). To update the
+  install: `bun run dist`, quit the app, copy the new `app.asar` over, relaunch.
   Packaged app keeps its own `userData` (`SCR-OCR`), so traineddata re-downloads
   once on first OCR.
 
