@@ -1,7 +1,7 @@
 {
   "name": "scr-ocr",
   "productName": "SCR-OCR",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Area screenshot tool with live-text OCR overlay — select a region, copy/save/pin it, and OCR the text so you can select and copy it right off the image.",
   "main": "main.js",
   "license": "MIT",
