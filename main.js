@@ -21,6 +21,16 @@ const HOTKEY_LABEL = 'PrtSc';
 // Speed · Soft Round theme grounds (theme-soft-round.css --sp-bg), used as the
 // window backgroundColor so nothing flashes before the renderer paints.
 const themeBg = () => (nativeTheme.shouldUseDarkColors ? '#191a1d' : '#faf9f7');
+// Native caption buttons (minimize / maximize / close) are drawn by Windows as a
+// Window Controls Overlay on top of the result window's toolbar row; these are
+// the theme's surface + text colors (--sp-surface / --sp-text) so the OS buttons
+// sit flush in it. RESULT_TOOLBAR must match #toolbar's height in result.html.
+const RESULT_TOOLBAR = 52;
+const titleBarOverlay = () => ({
+  color: nativeTheme.shouldUseDarkColors ? '#232428' : '#ffffff',
+  symbolColor: nativeTheme.shouldUseDarkColors ? '#e8e6e1' : '#302e29',
+  height: RESULT_TOOLBAR,
+});
 // Tesseract language(s), '+'-separated. Traineddata is downloaded on first OCR
 // and cached in the app's user-data folder, so later runs work offline.
 const OCR_LANGS = 'eng+pol';
@@ -31,11 +41,20 @@ let overlayWins = [];
 // displayId -> { image: NativeImage, scaleFactor, bounds }
 let captures = new Map();
 let capturing = false;
+// seconds-granularity countdown to a delayed capture; only one can be pending
+let delayInterval = null;
+// delay presets offered in the tray submenu and the launcher
+const DELAYS = [1, 2, 3, 5, 10];
 
 const selftestArg = process.argv.indexOf('--selftest');
 const SELFTEST = selftestArg !== -1;
 const SELFTEST_IMAGE = SELFTEST ? process.argv[selftestArg + 1] : null;
 const TEST_CAPTURE = process.argv.includes('--test-capture');
+// Test runs get their own user-data folder: sharing it with an installed SCR-OCR
+// means two Electron apps fighting over the same disk cache ("Unable to move the
+// cache") and lets a test write into the user's real app data.
+if (SELFTEST || TEST_CAPTURE)
+  app.setPath('userData', path.join(app.getPath('temp'), 'scr-ocr-test-userdata'));
 // software compositing makes SELFTEST_SHOT captures deterministic — with GPU
 // compositing, capturePage can return a stale frame (esp. in sandboxed runs)
 if (SELFTEST) app.disableHardwareAcceleration();
@@ -45,7 +64,7 @@ if (SELFTEST) app.disableHardwareAcceleration();
 function createLauncher() {
   launcherWin = new BrowserWindow({
     width: 380,
-    height: 240,
+    height: 284,
     resizable: false,
     maximizable: false,
     fullscreenable: false,
@@ -75,10 +94,17 @@ function createTray() {
   let icon = nativeImage.createFromPath(iconPath);
   if (icon.isEmpty()) icon = nativeImage.createEmpty();
   tray = new Tray(icon.resize({ width: 16, height: 16 }));
-  tray.setToolTip(`SCR-OCR — area screenshot + OCR (${HOTKEY_LABEL})`);
+  tray.setToolTip(trayTooltip());
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: `Take screenshot\t${HOTKEY_LABEL}`, click: () => startCapture() },
+      {
+        label: 'Take screenshot after delay',
+        submenu: DELAYS.map((s) => ({
+          label: `${s} second${s === 1 ? '' : 's'}`,
+          click: () => startCaptureDelayed(s),
+        })),
+      },
       { label: 'Show window', click: () => launcherWin.show() },
       { type: 'separator' },
       {
@@ -95,7 +121,47 @@ function createTray() {
 
 // ---------------------------------------------------------------- capture
 
+const trayTooltip = () => `SCR-OCR — area screenshot + OCR (${HOTKEY_LABEL})`;
+
+// notify the launcher so it can show/clear its countdown (0 = no delay pending)
+function sendDelayTick(remaining) {
+  if (launcherWin && !launcherWin.isDestroyed())
+    launcherWin.webContents.send('delay-tick', remaining);
+  if (tray)
+    tray.setToolTip(remaining > 0 ? `SCR-OCR — capturing in ${remaining}s…` : trayTooltip());
+}
+
+function cancelDelayedCapture() {
+  if (!delayInterval) return;
+  clearInterval(delayInterval);
+  delayInterval = null;
+  sendDelayTick(0);
+}
+
+// waits `seconds`, then captures. The app's own windows are content-protected
+// (never appear in the frame), so nothing needs hiding during the countdown —
+// the delay exists purely to let the user arrange the screen (open a menu,
+// hover a tooltip) before the frame is frozen.
+function startCaptureDelayed(seconds) {
+  cancelDelayedCapture();
+  if (capturing || overlayWins.length) return;
+  let remaining = Math.round(seconds);
+  if (!(remaining > 0)) return startCapture();
+  sendDelayTick(remaining);
+  delayInterval = setInterval(() => {
+    remaining -= 1;
+    if (remaining <= 0) {
+      cancelDelayedCapture();
+      startCapture();
+    } else {
+      sendDelayTick(remaining);
+    }
+  }, 1000);
+}
+
 async function startCapture({ discard = false } = {}) {
+  // an immediate capture request (hotkey, button) wins over a pending countdown
+  cancelDelayedCapture();
   if (capturing || overlayWins.length) return;
   capturing = true;
   try {
@@ -203,6 +269,10 @@ ipcMain.on('overlay-cancel', () => closeOverlays());
 // is either saved by then or explicitly discarded in favor of the next one.
 ipcMain.on('start-capture', (e, opts) => startCapture(opts));
 
+// launcher delay buttons; a second request just restarts the countdown
+ipcMain.on('start-capture-delayed', (e, seconds) => startCaptureDelayed(Number(seconds)));
+ipcMain.on('cancel-delayed-capture', () => cancelDelayedCapture());
+
 ipcMain.on('overlay-selected', (e, { displayId, rect }) => {
   const cap = captures.get(Number(displayId)) || captures.get(displayId);
   closeOverlays();
@@ -243,11 +313,12 @@ function openResult(image, scaleFactor, screenRect, { copied = false } = {}) {
   const cssW = Math.round(size.width / scaleFactor);
   const cssH = Math.round(size.height / scaleFactor);
 
-  const TOOLBAR = 52;
+  const TOOLBAR = RESULT_TOOLBAR;
   // width floor for narrow captures: all toolbar buttons (~545px in their widest
-  // state, "OCR ✓" + "📌 Pinned") plus enough #status room that short feedback
+  // state, "OCR ✓" + "📌 Pinned"), the native caption buttons overlaid on the
+  // right of the toolbar (~140px), plus enough #status room that short feedback
   // ("Image copied", "Saved") stays readable; longer statuses ellipsize
-  const MIN_W = 640;
+  const MIN_W = 760;
   const winW = Math.max(cssW + 24, MIN_W);
   const winH = cssH + TOOLBAR + 24;
 
@@ -266,8 +337,16 @@ function openResult(image, scaleFactor, screenRect, { copied = false } = {}) {
     y,
     width: finalW,
     height: finalH,
-    frame: false,
-    resizable: false,
+    // Windows-style frame without a second title bar: `titleBarStyle: 'hidden'`
+    // + titleBarOverlay keeps the OS frame (resize borders, rounded corners,
+    // snap layouts on the maximize button, Alt+Space menu) and lets Windows
+    // draw its native caption buttons over the top-right of our toolbar row —
+    // the toolbar is the title bar, the way Explorer and Settings do it.
+    titleBarStyle: 'hidden',
+    titleBarOverlay: titleBarOverlay(),
+    resizable: true,
+    minWidth: Math.min(MIN_W, wa.width),
+    minHeight: Math.min(TOOLBAR + 80, wa.height),
     skipTaskbar: false,
     alwaysOnTop: true,
     show: false,
@@ -291,7 +370,26 @@ function openResult(image, scaleFactor, screenRect, { copied = false } = {}) {
     });
   });
   win.once('ready-to-show', () => win.show());
+  // ready-to-show waits for a painted frame, which never arrives when nothing is
+  // compositing (a headless/asleep machine running the selftest) — and a window
+  // that is never shown stays hidden to the renderer, so img.decode() never
+  // settles and OCR never starts. Show it anyway in tests.
+  if (SELFTEST)
+    setTimeout(() => {
+      if (!win.isDestroyed() && !win.isVisible()) win.showInactive();
+    }, 1500);
 }
+
+// the OS-drawn caption buttons don't know about our theme — repaint them when
+// Windows flips light/dark (windows without an overlay just throw, skip those)
+nativeTheme.on('updated', () => {
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (w.isDestroyed()) continue;
+    try {
+      w.setTitleBarOverlay(titleBarOverlay());
+    } catch {}
+  }
+});
 
 ipcMain.on('result-copy-image', (e, pngBase64) => {
   clipboard.writeImage(nativeImage.createFromBuffer(Buffer.from(pngBase64, 'base64')));
@@ -458,11 +556,20 @@ ipcMain.on('selftest-ocr-error', (e, msg) => {
 
 // ---------------------------------------------------------------- app
 
-const gotLock = app.requestSingleInstanceLock();
-if (!gotLock && !SELFTEST) {
+// Test runs must never drive an instance the user already has running: merely
+// *asking* for the lock makes the primary fire 'second-instance' (which starts a
+// capture — a fullscreen overlay the user then has to Esc away), so --selftest
+// and --test-capture skip the request entirely and run beside it.
+const TEST_MODE = SELFTEST || TEST_CAPTURE;
+const gotLock = TEST_MODE || app.requestSingleInstanceLock();
+if (!gotLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => startCapture());
+  app.on('second-instance', (e, argv) => {
+    // belt and braces for the same thing, from the primary's side
+    if (argv.includes('--selftest') || argv.includes('--test-capture')) return;
+    startCapture();
+  });
 
   app.whenReady().then(() => {
     createLauncher();

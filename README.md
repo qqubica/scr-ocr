@@ -11,7 +11,14 @@ copy them like normal text (think macOS Live Text, but for any screenshot).
 - **Area selection** — global hotkey `PrtSc` (or the tray icon / launcher button)
   freezes the screen; drag to pick a region, `Esc` cancels. Multi-monitor and
   HiDPI-aware (captures at native resolution).
-- **Screenshot actions** — the captured region opens in a small always-on-top window:
+- **Delayed capture** — take the shot after 1, 2, 3, 5 or 10 seconds (launcher
+  buttons or the tray's *Take screenshot after delay* submenu), with a live
+  countdown in the launcher and tray tooltip. Handy for menus, tooltips and other
+  UI that closes when you press a key. Cancel from the launcher; pressing `PrtSc`
+  during the countdown captures immediately instead.
+- **Screenshot actions** — the captured region opens in a small always-on-top window
+  with a normal Windows frame (resizable, snap layouts, and native minimize /
+  maximize / close buttons sitting in the toolbar row):
   - **New** — take another screenshot
   - **Copy** — image to clipboard (`Ctrl+C`)
   - **Save** — PNG via save dialog (`Ctrl+S`)
@@ -69,6 +76,11 @@ bun run selftest -- path/to/image.png
 
 Set `SELFTEST_SHOT=path/to/shot.png` to also save a screenshot of the result
 window with the text layer visible.
+
+Test runs (`--selftest`, `--test-capture`) stay out of the way of an installed
+SCR-OCR you already have running: they never request the single-instance lock —
+which would make that instance pop a capture overlay — and they keep their own
+user-data folder (`%TEMP%\scr-ocr-test-userdata`) instead of sharing its cache.
 
 `bunx electron . --test-capture` briefly exercises the real capture + overlay path
 and prints what was captured.

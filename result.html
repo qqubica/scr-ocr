@@ -12,6 +12,8 @@
     flex-direction: column;
     overflow: hidden;
   }
+  /* doubles as the window's title bar (see titleBarOverlay in main.js) —
+     keep the height in sync with RESULT_TOOLBAR there */
   #toolbar {
     height: 52px;
     flex: 0 0 52px;
@@ -19,6 +21,11 @@
     align-items: center;
     gap: 8px;
     padding: 0 12px;
+    /* this row is the window's title bar: Windows paints its native caption
+       buttons over the right end of it, so keep the toolbar content clear of
+       them. 150px is the fallback; syncCaptionInset() below sets the exact
+       width the OS reports. */
+    padding-right: 150px;
     background: var(--sp-surface);
     border-bottom: 1px solid var(--sp-border);
     -webkit-app-region: drag;
@@ -49,20 +56,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  #closeBtn {
-    margin-left: 6px;
-    width: 32px;
-    height: 32px;
-    flex: none;
-    border: none;
-    border-radius: var(--sp-radius-full);
-    background: none;
-    color: var(--sp-muted);
-    font: 14px/1 var(--sp-font-ui);
-    cursor: pointer;
-    transition: background var(--sp-dur-hover) ease;
-  }
-  #closeBtn:hover { background: var(--sp-hover-strong); color: var(--sp-text); }
   /* OCR-in-progress spinner, inline in the OCR button (.sp-btn gap spaces it) */
   .spinner {
     display: none;
@@ -152,7 +145,6 @@
   <button id="copyText" class="sp-btn sp-btn--outline" title="Copy all recognized text" disabled>Copy text</button>
   <button id="pin" class="sp-btn sp-btn--outline active" title="Keep this window on top">📌 Pinned</button>
   <span id="status"></span>
-  <button id="closeBtn" title="Close (Esc)">✕</button>
 </div>
 <div id="stage">
   <div id="frame">
@@ -174,7 +166,24 @@
   const btnOcr = document.getElementById('ocr');
   const btnCopyText = document.getElementById('copyText');
   const btnPin = document.getElementById('pin');
-  const btnClose = document.getElementById('closeBtn');
+  const toolbar = document.getElementById('toolbar');
+
+  // The native caption buttons float over the right end of the toolbar (Window
+  // Controls Overlay); the OS reports how much room they take, and it changes
+  // with DPI, maximize state and the Windows version — reserve exactly that.
+  // The overlay reads as invisible until the window is first shown (and while
+  // fullscreen), and geometrychange fires with the real numbers right after —
+  // until then the CSS fallback holds the space.
+  function syncCaptionInset() {
+    const wco = navigator.windowControlsOverlay;
+    if (!wco || !wco.visible) return;
+    const r = wco.getTitlebarAreaRect();
+    toolbar.style.paddingRight = Math.max(12, window.innerWidth - (r.x + r.width) + 12) + 'px';
+  }
+  if (navigator.windowControlsOverlay) {
+    navigator.windowControlsOverlay.addEventListener('geometrychange', syncCaptionInset);
+    syncCaptionInset();
+  }
 
   let pngBase64 = null;
   let physW = 0, physH = 0;
@@ -203,8 +212,14 @@
     img.style.width = data.cssW + 'px';
     img.style.height = data.cssH + 'px';
     if (data.copied) flashStatus('Copied to clipboard');
-    // OCR runs right away so the button can reflect whether text was found
-    img.decode().then(runOcr).catch(runOcr);
+    // OCR runs right away so the button can reflect whether text was found.
+    // The decode is only a courtesy (the layout size is set above, so the text
+    // layer measures correctly either way) — a hidden window never decodes, so
+    // don't let it hold OCR back forever.
+    Promise.race([
+      img.decode().catch(() => {}),
+      new Promise((r) => setTimeout(r, 1500)),
+    ]).then(runOcr);
   });
 
   // ------------------------------------------------------------- actions
@@ -231,8 +246,6 @@
     btnPin.classList.toggle('active', pinned);
     btnPin.textContent = pinned ? '📌 Pinned' : '📌 Pin';
   });
-
-  btnClose.addEventListener('click', () => ipcRenderer.send('result-close'));
 
   // New = take another screenshot, discarding this (and any other) preview
   document.getElementById('newShot').addEventListener('click', () =>
