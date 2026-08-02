@@ -64,7 +64,7 @@ if (SELFTEST) app.disableHardwareAcceleration();
 function createLauncher() {
   launcherWin = new BrowserWindow({
     width: 380,
-    height: 250,
+    height: 290,
     resizable: false,
     maximizable: false,
     fullscreenable: false,
