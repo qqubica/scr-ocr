@@ -62,9 +62,11 @@ if (SELFTEST) app.disableHardwareAcceleration();
 // ---------------------------------------------------------------- launcher
 
 function createLauncher() {
+  // compact: the delay presets pop up as a native menu that can extend past
+  // the window's edges, so no in-window space is reserved for them
   launcherWin = new BrowserWindow({
     width: 380,
-    height: 290,
+    height: 216,
     resizable: false,
     maximizable: false,
     fullscreenable: false,
@@ -272,6 +274,26 @@ ipcMain.on('start-capture', (e, opts) => startCapture(opts));
 // launcher delay buttons; a second request just restarts the countdown
 ipcMain.on('start-capture-delayed', (e, seconds) => startCaptureDelayed(Number(seconds)));
 ipcMain.on('cancel-delayed-capture', () => cancelDelayedCapture());
+
+// the launcher's delay-preset dropdown: a native popup menu anchored under the
+// split button, because a DOM dropdown can't extend past the window bounds and
+// the launcher window is deliberately too small to contain one. Picking an item
+// starts the delayed capture and echoes the choice back for the button label.
+ipcMain.on('show-delay-menu', (e, { x, y, current }) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (!win) return;
+  Menu.buildFromTemplate(
+    DELAYS.map((s) => ({
+      label: `${s} second${s === 1 ? '' : 's'}`,
+      type: 'radio',
+      checked: s === current,
+      click: () => {
+        if (!e.sender.isDestroyed()) e.sender.send('delay-selected', s);
+        startCaptureDelayed(s);
+      },
+    }))
+  ).popup({ window: win, x: Math.round(x), y: Math.round(y) });
+});
 
 ipcMain.on('overlay-selected', (e, { displayId, rect }) => {
   const cap = captures.get(Number(displayId)) || captures.get(displayId);
