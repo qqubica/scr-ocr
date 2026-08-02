@@ -16,13 +16,69 @@
     user-select: none;
   }
   h1 { font-size: 18px; font-weight: 700; letter-spacing: 0.2px; }
-  #capture { height: 40px; padding: 0 24px; font-size: 14px; }
-  /* delay presets and the countdown swap in place, so the layout never jumps */
-  .delay-row { height: 28px; display: flex; align-items: center; gap: 6px; }
-  .delay-row[hidden] { display: none; }
-  .delay-label { font-size: 12px; color: var(--sp-muted); margin-right: 2px; }
-  .delay-btn { height: 28px; padding: 0 10px; font-size: 12px; }
+  /* the capture row and the countdown swap in place (equal heights), so the
+     layout never jumps */
+  .row { height: 40px; display: flex; align-items: center; gap: 8px; }
+  .row[hidden] { display: none; }
+  #capture { height: 40px; padding: 0 22px; font-size: 14px; }
+  /* split button: "After Ns" fires the delayed capture, the chevron opens the
+     preset menu; fixed width so the label change (1s ↔ 10s) doesn't shift it */
+  .split { position: relative; display: flex; width: 124px; height: 40px; }
+  .split-main {
+    flex: 1;
+    height: 40px;
+    padding: 0 0 0 14px;
+    font-size: 13px;
+    justify-content: flex-start;
+    border-radius: var(--sp-radius-full) 0 0 var(--sp-radius-full);
+    border-right: none;
+  }
+  .split-toggle {
+    width: 30px;
+    height: 40px;
+    padding: 0 4px 0 0;
+    font-size: 10px;
+    border-radius: 0 var(--sp-radius-full) var(--sp-radius-full) 0;
+    border-left: 1px solid var(--sp-border);
+  }
+  /* the preset menu opens centered over the split button (macOS-select style)
+     rather than below it — the window is short and a drop-down would clip */
+  .menu {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    min-width: 100%;
+    transform: translateY(-50%);
+    background: var(--sp-surface);
+    border: 1px solid var(--sp-border-strong);
+    border-radius: var(--sp-radius-tool);
+    padding: 4px;
+    box-shadow: var(--sp-shadow-card);
+    z-index: 10;
+    animation: menu-in var(--sp-dur-enter) var(--sp-ease-spring);
+  }
+  .menu[hidden] { display: none; }
+  @keyframes menu-in {
+    from { opacity: 0; transform: translateY(-50%) scale(0.95); }
+  }
+  .menu button {
+    display: block;
+    width: 100%;
+    padding: 5px 12px;
+    border: none;
+    border-radius: 10px;
+    background: none;
+    color: var(--sp-text);
+    font-family: var(--sp-font-ui);
+    font-size: 12.5px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .menu button:hover { background: var(--sp-hover-strong); }
+  .menu button.current { background: var(--sp-accent-tint); }
+  .menu button:focus-visible { outline: 2px solid var(--sp-accent); outline-offset: -2px; }
   #countdown-text { font-size: 13px; font-variant-numeric: tabular-nums; }
+  #countdown-cancel { height: 32px; padding: 0 14px; font-size: 12px; }
   .hint { font-size: 12px; color: var(--sp-muted); text-align: center; line-height: 1.8; }
   kbd {
     background: var(--sp-surface);
@@ -37,18 +93,18 @@
 </head>
 <body class="sp-body">
 <h1>SCR-OCR</h1>
-<button id="capture" class="sp-btn">Take screenshot</button>
-<div id="delays" class="delay-row">
-  <span class="delay-label">or after</span>
-  <button class="sp-btn delay-btn" data-seconds="1">1s</button>
-  <button class="sp-btn delay-btn" data-seconds="2">2s</button>
-  <button class="sp-btn delay-btn" data-seconds="3">3s</button>
-  <button class="sp-btn delay-btn" data-seconds="5">5s</button>
-  <button class="sp-btn delay-btn" data-seconds="10">10s</button>
+<div id="capture-row" class="row">
+  <button id="capture" class="sp-btn">Take screenshot</button>
+  <div class="split">
+    <button id="delay-main" class="sp-btn sp-btn--outline split-main"></button>
+    <button id="delay-toggle" class="sp-btn sp-btn--outline split-toggle"
+            aria-haspopup="menu" aria-label="Choose delay">&#9662;</button>
+    <div id="delay-menu" class="menu" role="menu" hidden></div>
+  </div>
 </div>
-<div id="countdown" class="delay-row" hidden>
+<div id="countdown" class="row" hidden>
   <span id="countdown-text"></span>
-  <button id="countdown-cancel" class="sp-btn delay-btn">Cancel</button>
+  <button id="countdown-cancel" class="sp-btn sp-btn--outline">Cancel</button>
 </div>
 <div class="hint">
   Global hotkey: <kbd>PrtSc</kbd><br />
@@ -56,25 +112,65 @@
 </div>
 <script>
   const { ipcRenderer } = require('electron');
+  const DELAYS = [1, 2, 3, 5, 10]; // keep in sync with DELAYS in main.js
+
+  // last-used delay is the split button's default, remembered across runs
+  let delay = Number(localStorage.getItem('delay-seconds'));
+  if (!DELAYS.includes(delay)) delay = 1;
+
+  const menu = document.getElementById('delay-menu');
+  const mainBtn = document.getElementById('delay-main');
+
+  function renderDelay() {
+    mainBtn.textContent = `After ${delay}s`;
+    menu.innerHTML = '';
+    for (const s of DELAYS) {
+      const item = document.createElement('button');
+      item.setAttribute('role', 'menuitem');
+      item.textContent = `${s} second${s === 1 ? '' : 's'}`;
+      if (s === delay) item.classList.add('current');
+      item.addEventListener('click', () => {
+        delay = s;
+        localStorage.setItem('delay-seconds', String(s));
+        renderDelay();
+        menu.hidden = true;
+        ipcRenderer.send('start-capture-delayed', s);
+      });
+      menu.appendChild(item);
+    }
+  }
+  renderDelay();
+
   document.getElementById('capture').addEventListener('click', () => {
     ipcRenderer.send('start-capture');
   });
-  for (const btn of document.querySelectorAll('.delay-btn[data-seconds]')) {
-    btn.addEventListener('click', () => {
-      ipcRenderer.send('start-capture-delayed', Number(btn.dataset.seconds));
-    });
-  }
+  mainBtn.addEventListener('click', () => {
+    ipcRenderer.send('start-capture-delayed', delay);
+  });
+  document.getElementById('delay-toggle').addEventListener('click', (e) => {
+    e.stopPropagation();
+    menu.hidden = !menu.hidden;
+  });
+  // any click outside the menu (or Esc) dismisses it
+  document.addEventListener('click', (e) => {
+    if (!menu.hidden && !menu.contains(e.target)) menu.hidden = true;
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') menu.hidden = true;
+  });
   document.getElementById('countdown-cancel').addEventListener('click', () => {
     ipcRenderer.send('cancel-delayed-capture');
   });
   // main broadcasts the remaining seconds once per second; 0 means no delay
-  // is pending (fired or cancelled) — show the presets again
+  // is pending (fired or cancelled) — show the capture buttons again
   ipcRenderer.on('delay-tick', (e, remaining) => {
     const pending = remaining > 0;
-    document.getElementById('delays').hidden = pending;
+    document.getElementById('capture-row').hidden = pending;
     document.getElementById('countdown').hidden = !pending;
-    if (pending)
+    if (pending) {
+      menu.hidden = true;
       document.getElementById('countdown-text').textContent = `Capturing in ${remaining}s…`;
+    }
   });
 </script>
 </body>
